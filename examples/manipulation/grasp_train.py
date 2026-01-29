@@ -126,11 +126,13 @@ def get_task_cfgs():
         "num_obs": 14,
         "num_actions": 6,
         "action_scales": [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
-        "episode_length_s": 3.0,
+        "episode_length_s": 10.0,
         "ctrl_dt": 0.01,
-        "box_size": [0.08, 0.03, 0.06],
-        "box_collision": False,
-        "box_fixed": True,
+        "table_pos": (0.0, 0.0, 0.8),
+        "table_quat": (1.0, 0.0, 0.0, 0.0),
+        "box_size": [0.05, 0.05, 0.05],
+        "box_collision": True,
+        "box_fixed": False,
         "image_resolution": (64, 64),
         "use_rasterizer": True,
         "visualize_camera": False,
@@ -142,9 +144,11 @@ def get_task_cfgs():
     robot_cfg = {
         "ee_link_name": "hand",
         "gripper_link_names": ["left_finger", "right_finger"],
-        "default_arm_dof": [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785],
+        "default_joint_angles": [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785],
         "default_gripper_dof": [0.04, 0.04],
         "ik_method": "dls_ik",
+        "pos": env_cfg["table_pos"], # position the robot at the table
+        "quat": env_cfg["table_quat"],
     }
     return env_cfg, reward_scales, robot_cfg
 

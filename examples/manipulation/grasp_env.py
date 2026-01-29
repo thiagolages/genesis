@@ -28,6 +28,9 @@ class GraspEnv:
         self.device = gs.device
 
         self.ctrl_dt = env_cfg["ctrl_dt"]
+        print(f"ctrl_dt: {self.ctrl_dt}")
+        print(f"num_envs: {self.num_envs}")
+        print(f"episode_length_s: {env_cfg['episode_length_s']}")
         self.max_episode_length = math.ceil(env_cfg["episode_length_s"] / self.ctrl_dt)
 
         # configs
@@ -37,19 +40,28 @@ class GraspEnv:
 
         # == setup scene ==
         self.scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=self.ctrl_dt, substeps=2),
+            sim_options=gs.options.SimOptions(dt=self.ctrl_dt, substeps=10),
+            sph_options=gs.options.SPHOptions(
+                lower_bound=(0.25, -0.17, 0.0),
+                upper_bound=(1, 0.22, 1.1),
+                particle_size=0.017,
+            ),
             rigid_options=gs.options.RigidOptions(
                 dt=self.ctrl_dt,
                 constraint_solver=gs.constraint_solver.Newton,
                 enable_collision=True,
                 enable_joint_limit=True,
+                constraint_timeconst=0.001
             ),
-            vis_options=gs.options.VisOptions(rendered_envs_idx=list(range(10))),
+            vis_options=gs.options.VisOptions(
+                rendered_envs_idx=list(range(10)),
+                visualize_sph_boundary=True,
+            ),
             viewer_options=gs.options.ViewerOptions(
                 max_FPS=int(0.5 / self.ctrl_dt),
-                camera_pos=(2.0, 0.0, 2.5),
-                camera_lookat=(0.0, 0.0, 0.5),
-                camera_fov=40,
+                camera_pos=(0.5, 0, 2.0),
+                camera_lookat=(0.5, 1, 1.0),
+                camera_fov=60,
             ),
             profiling_options=gs.options.ProfilingOptions(show_FPS=False),
             renderer=gs.options.renderers.BatchRenderer(
@@ -59,7 +71,13 @@ class GraspEnv:
         )
 
         # == add ground ==
-        self.scene.add_entity(gs.morphs.URDF(file="urdf/plane/plane.urdf", fixed=True))
+        self.scene.add_entity(
+            gs.morphs.URDF(
+                file="urdf/plane/plane.urdf",
+                fixed=True,
+                pos=(0.0, 0.0, 0.6),
+            )
+        )
 
         # == add robot ==
         self.robot = Manipulator(
@@ -69,25 +87,100 @@ class GraspEnv:
             device=gs.device,
         )
 
+        # == Add table ==
+        # self.table = self.scene.add_entity(
+        #     gs.morphs.Mesh(
+        #         file="/workspace/research/assets/meshes/Wood_Table.stl",
+        #         scale=1,
+        #         pos=env_cfg["table_pos"],
+        #         quat=env_cfg["table_quat"],
+        #         convexify=True,
+        #         decimate=True,
+        #         decimate_face_num=500,
+        #         fixed=True,
+        #     )
+        # )
+
+
         # == add object ==
+        self.object_pos = (0.6, 0, 1.0)
         self.object = self.scene.add_entity(
             gs.morphs.Box(
+                pos=self.object_pos,
                 size=env_cfg["box_size"],
                 fixed=env_cfg["box_fixed"],
                 collision=env_cfg["box_collision"],
                 batch_fixed_verts=True,
             ),
             # material=gs.materials.Rigid(gravity_compensation=1),
-            surface=gs.surfaces.Rough(
-                diffuse_texture=gs.textures.ColorTexture(
-                    color=(1.0, 0.0, 0.0),
-                ),
+            # surface=gs.surfaces.Rough(
+            #     diffuse_texture=gs.textures.ColorTexture(
+            #         color=(1.0, 0.0, 0.0),
+            #     ),
+            # ),
+            surface=gs.surfaces.Default(
+                color=(1.0, 0.0, 0.0),
+            )
+        )
+
+        # With processing options
+        self.fryer = self.scene.add_entity(
+            gs.morphs.Mesh(
+                file="/workspace/research/assets/meshes/fryer.stl",
+                scale=1,
+                pos=(0.15, 0.25, 0),
+                quat=(1.0, 0.0, 0.0, 0.0),
+                convexify=True,
+                decimate=True,
+                decimate_face_num=500,
+                fixed=True,
+            )
+        )
+
+        # == add water ==
+        self.water = self.scene.add_entity(
+            material=gs.materials.SPH.Liquid(
+                mu=0.01,
+                # stiffness=50000.0,  # Default stiffness
+                sampler="regular"
+            ),
+            morph=gs.morphs.Box(
+                pos=(0.6, 0.0, 0.7),
+                size=(0.35, 0.35, 0.35),
+            ),
+            surface=gs.surfaces.Default(
+                color=(0.5, 0.7, 0.9, 1.0),
             ),
         )
+        # self.water = self.scene.add_entity(
+        #     material=gs.materials.SPH.Liquid(
+        #         mu=1e-5, # viscosity
+        #         # # Below values are left as default:
+        #         # rho=1000.0, # density
+        #         sampler="regular", # particle sampler
+        #         # gamma=0.01, # surface tension
+        #         # stiffness=50000.0, # stiffness
+        #         # exponent=7.0, # exponent
+        #     ),
+        #     # Box
+        #     # morph=gs.morphs.Box(
+        #     #     pos=(0.5, 0.0, 0.6),
+        #     #     size=(0.25, 0.25, 0.25),
+        #     # ),
+        #     # Sphere
+        #     morph=gs.morphs.Sphere(
+        #         pos=(0.50, 0.0, 1.10),
+        #         radius=0.10, # 20cm radius
+        #         fixed=False,
+        #     ),
+        #     surface=gs.surfaces.Default(
+        #         color=(0.5, 0.7, 0.9, 1.0),
+        #     ),
+        # )
         if self.env_cfg["visualize_camera"]:
             self.vis_cam = self.scene.add_camera(
                 res=(1280, 720),
-                pos=(1.5, 0.0, 0.2),
+                pos=(2.5, 0.0, 0.2),
                 lookat=(0.0, 0.0, 0.2),
                 fov=60,
                 GUI=self.env_cfg["visualize_camera"],
@@ -111,7 +204,10 @@ class GraspEnv:
         )
 
         # build
-        self.scene.build(n_envs=env_cfg["num_envs"])
+        self.scene.build(
+            n_envs=env_cfg["num_envs"],
+            env_spacing=(1.25, 1.25)
+        )
         # set pd gains (must be called after scene.build)
         self.robot.set_pd_gains()
 
@@ -148,6 +244,9 @@ class GraspEnv:
         random_y = (torch.rand(num_reset, device=self.device) - 0.5) * 0.5  # -0.25 ~ 0.25
         random_z = torch.ones(num_reset, device=self.device) * 0.025  # 0.15 ~ 0.15
         random_pos = torch.stack([random_x, random_y, random_z], dim=-1)
+        
+        # TEMPORARY
+        random_pos = torch.tensor(self.object_pos , device=self.device).repeat(num_reset, 1)
 
         # downward facing quaternion to align with the hand
         q_downward = torch.tensor([0.0, 1.0, 0.0, 0.0], device=self.device).repeat(num_reset, 1)
@@ -347,7 +446,13 @@ class GraspEnv:
 
 ## ------------ robot ----------------
 class Manipulator:
-    def __init__(self, num_envs: int, scene: gs.Scene, args: dict, device: str = "cpu"):
+    def __init__(
+        self,
+        num_envs: int,
+        scene: gs.Scene,
+        args: dict,
+        device: str = "cpu",
+    ):
         # == set members ==
         self._device = device
         self._scene = scene
@@ -358,8 +463,8 @@ class Manipulator:
         material: gs.materials.Rigid = gs.materials.Rigid()
         morph: gs.morphs.URDF = gs.morphs.MJCF(
             file="xml/franka_emika_panda/panda.xml",
-            pos=(0.0, 0.0, 0.0),
-            quat=(1.0, 0.0, 0.0, 0.0),
+            pos=args["pos"],
+            quat=args["quat"],
         )
         self._robot_entity: gs.Entity = scene.add_entity(material=material, morph=morph)
 
@@ -388,6 +493,7 @@ class Manipulator:
         )
 
     def _init(self):
+        print("All args: ", self._args)
         self._arm_dof_dim = self._robot_entity.n_dofs - 2  # total number of arm: joints
         self._gripper_dim = 2  # number of gripper joints
 
@@ -402,7 +508,7 @@ class Manipulator:
         self._ee_link = self._robot_entity.get_link(self._args["ee_link_name"])
         self._left_finger_link = self._robot_entity.get_link(self._args["gripper_link_names"][0])
         self._right_finger_link = self._robot_entity.get_link(self._args["gripper_link_names"][1])
-        self._default_joint_angles = self._args["default_arm_dof"]
+        self._default_joint_angles = self._args["default_joint_angles"]
         if self._args["default_gripper_dof"] is not None:
             self._default_joint_angles += self._args["default_gripper_dof"]
 
